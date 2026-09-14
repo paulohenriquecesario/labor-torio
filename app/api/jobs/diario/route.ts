@@ -7,13 +7,36 @@ import { coletarPagina } from '@/lib/coletores/pagina';
 export const maxDuration = 300;
 
 /**
+ * Aceita tanto o header customizado `x-cron-secret` (curl manual, GitHub Actions)
+ * quanto `Authorization: Bearer <CRON_SECRET>` — formato que a própria Vercel Cron
+ * envia automaticamente quando a env var CRON_SECRET está configurada no projeto.
+ */
+function autorizado(request: Request): boolean {
+  if (!process.env.CRON_SECRET) return false;
+  const headerCustom = request.headers.get('x-cron-secret');
+  if (headerCustom === process.env.CRON_SECRET) return true;
+  const authHeader = request.headers.get('authorization');
+  return authHeader === `Bearer ${process.env.CRON_SECRET}`;
+}
+
+/**
  * Cron diário (requisitos 21, 74): executa pesquisa e espionagem automática para cada
  * nicho ativo, gera relatório com status 'aguardando_aprovacao', monitora concorrentes
  * cadastrados e descobre novos players. Protegido por CRON_SECRET.
+ *
+ * GET é o método usado pela Vercel Cron; POST fica disponível para chamada manual
+ * (curl, GitHub Actions, etc.) — ambos rodam exatamente a mesma lógica.
  */
+export async function GET(request: Request) {
+  return executarJobDiario(request);
+}
+
 export async function POST(request: Request) {
-  const secret = request.headers.get('x-cron-secret');
-  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+  return executarJobDiario(request);
+}
+
+async function executarJobDiario(request: Request) {
+  if (!autorizado(request)) {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   }
 
